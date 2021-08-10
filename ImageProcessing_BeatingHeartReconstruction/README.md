@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-Processor_6D by Alexander Ernst
+Image pre- and post- processing tools for timelapse creation of beating zebrafish heart 
 </head>
 <body>
 
@@ -25,7 +25,7 @@ This Plugin is made for the specific purpose of helping the users of the Leica D
 These files are usually large, for this reason the virtualstack function is used. Future versions will offer more processing functionalites.
 </p>
 <p> 
-Make_timelapse
+<h1> Make_timelapse </h1>
 
 This tool was made in context of 6D-imaging of the beating heart and is made to assemble a time lapse from individual movies of a beating heart at different time points to follow the development of the zebrafish heart. Either you select the same frame for each time point or you provide a table, which allows to choose a different frame for each time point.
 
@@ -40,10 +40,18 @@ Alexander Ernst
 Institute of anatomy, University of Bern
 Programmed in Jython, tested on FIJI: IJ.getVersion: 2.0.0-rc-69/1.52p   and java.version: 1.8.0_172
 </p>
-<h1> Installation </h1>
+<h1> Installations </h1>
+<h2> Processor_6D  </h2>
 <p>
 1. Simply copy Converter_6D and Processor_6D to your "FIJI/Plugins/" directory and restart FIJI. 
 2. Start Processor_6D from inside FIJI in the Plugins tab.   
 </p>
+  
+<h2> Make_timelapse </h2>
+<p>
+1. Simply copy Make_timelapse to your "FIJI/Plugins/" directory and restart FIJI. 
+2. Start Make_timelapse from inside FIJI in the Plugins tab.   
+</p>
+  
 </body>
 </html>

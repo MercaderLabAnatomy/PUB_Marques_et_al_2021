@@ -48,11 +48,10 @@ Testdata can be provided on request, as the files are between 500 - 1500 gb big.
 1. Simply copy Make_timelapse to your "FIJI/Plugins/" directory and restart FIJI. 
 2. Start Make_timelapse from inside FIJI in the Plugins tab.   
 </p>
+<h2> Tested on Fiji:</h2>
 
 <p> 
-Alexander Ernst
-Institute of anatomy, University of Bern
-Programmed in Jython, tested on FIJI: IJ.getVersion: 2.0.0-rc-69/1.52p   and java.version: 1.8.0_172
+IJ.getVersion: 2.0.0-rc-69/1.52p   and java.version: 1.8.0_172
 </p>
 </body>
 </html>

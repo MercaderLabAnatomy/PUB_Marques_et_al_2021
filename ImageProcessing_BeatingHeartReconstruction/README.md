@@ -35,11 +35,7 @@ The table can be created in excel with one column "Frame selected" which sequent
 <p>
 Testdata can be provided on request, as the files are between 500 - 1500 gb big. 
 </p>
-<p> 
-Alexander Ernst
-Institute of anatomy, University of Bern
-Programmed in Jython, tested on FIJI: IJ.getVersion: 2.0.0-rc-69/1.52p   and java.version: 1.8.0_172
-</p>
+
 <h1> Installations </h1>
 <h2> Processor_6D  </h2>
 <p>
@@ -52,6 +48,11 @@ Programmed in Jython, tested on FIJI: IJ.getVersion: 2.0.0-rc-69/1.52p   and jav
 1. Simply copy Make_timelapse to your "FIJI/Plugins/" directory and restart FIJI. 
 2. Start Make_timelapse from inside FIJI in the Plugins tab.   
 </p>
-  
+
+<p> 
+Alexander Ernst
+Institute of anatomy, University of Bern
+Programmed in Jython, tested on FIJI: IJ.getVersion: 2.0.0-rc-69/1.52p   and java.version: 1.8.0_172
+</p>
 </body>
 </html>

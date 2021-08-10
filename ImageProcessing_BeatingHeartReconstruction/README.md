@@ -3,7 +3,7 @@
 <head>
 Image pre- and post- processing tools for timelapse creation of beating zebrafish heart 
 <br>
-!! This repository does not contain BeatSync for 3D reconstruction of the heart, see material and methods of Marques, et al. 2021 !! 
+<b>!! This repository does not contain BeatSync for 3D reconstruction of the heart, see material and methods of Marques, et al. 2021 !! <\b>
 </head>
 <body>
 

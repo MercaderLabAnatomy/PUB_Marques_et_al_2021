@@ -5,7 +5,7 @@ Image pre- and post- processing tools for timelapse creation of beating zebrafis
 </head>
 <body>
 
-<h1> Processor_6D  </h1>
+<h1> Processor_6D / Converter_6D </h1>
 <p>
 
 This Plugin for FIJI is made to facilitate browsing through <br> XYTCZL .lif datasets (T: frames C:Channels Z:slices, L: loops) datasets, using the virtual stack function. 

@@ -1,4 +1,4 @@
-# Marques_et_al_2021
+# Downregulation of WT1 transcription factor gene expression is required to promote myocardial fate
 This repository contains the codes referenced to in Marques, et al. 2021 (doi: https://doi.org/10.1101/2021.07.06.451274).
 
 ## Abstract

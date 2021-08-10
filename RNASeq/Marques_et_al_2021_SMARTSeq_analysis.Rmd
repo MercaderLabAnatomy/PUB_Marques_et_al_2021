@@ -1,0 +1,719 @@
+---
+title: "Marques et al 2021 SMARTSeq Analysis"
+output:
+  pdf_document:
+    toc: yes
+    fig_width: 10
+    fig_height: 8
+classoption: landscape
+---
+
+
+# Analyzing RNASeq from Proepicardium, Pericardium and Heart tube
+
+```{r, setup, include=FALSE}
+# chunk option defaults
+knitr::opts_chunk$set(fig.height=9, fig.width=9)
+```
+
+#Clear Memory and load libraries
+
+```{r}
+rm(list = ls())
+gc()
+# setwd("/home/prateek/Mercader_Lab/Ines_Data/SMART_Laura/final")
+getwd()
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+library(DESeq2)
+library(clusterProfiler)
+library(enrichplot)
+library(openxlsx)
+library(cmapR)
+```
+# Read counts file
+```{r}
+counts_all <- read.table("SMART_Laura_featurecounts_counts_all.txt", header = T, check.names = F)
+colnames(counts_all)[7:16] <- gsub(pattern = "./star_alignments_and_counts/", "", colnames(counts_all)[7:16])
+colnames(counts_all)[7:16] <- gsub(pattern = "__.*", "", colnames(counts_all)[7:16])
+rownames(counts_all) <- counts_all$Geneid
+counts <- counts_all[,7:16]
+counts <- counts %>% dplyr::select(-S3_3)
+head(counts)
+
+colnames(counts)
+```
+# Read Metadata
+```{r}
+metadata_smart <- read.xlsx("Metadata.xlsx")
+rownames(metadata_smart) <- metadata_smart$Sample_Name
+
+#sample removed as it was outlier according to PCA
+metadata_smart <- metadata_smart %>% filter(!(Sample_Name == "S3_3")) 
+(metadata_smart)
+```
+
+# Convert counts dataframe to matrix
+```{r}
+counts_mat <- as.matrix(counts)
+```
+
+# Function to convert Ensmbl ID to Zebrafish gene symbol
+
+```{r}
+Genes <- rownames(counts_mat)
+ensmbl_to_gene_danio <- function(x){
+  require(biomaRt)
+  mart <- useMart(biomart = "ensembl", dataset = "drerio_gene_ensembl")
+  # query biomart
+  results <- getBM(attributes = c("ensembl_gene_id", "zfin_id_symbol"),
+                                  filters = "ensembl_gene_id", values = x,
+                                  mart = mart)
+  results
+                                      }
+gene_symbols_ensmbl_df <- ensmbl_to_gene_danio(Genes)
+head(gene_symbols_ensmbl_df)
+```
+# Function to convert Zebrafish Ensmbl ID to Mouse genes
+
+
+```{r}
+zgGenes <-  rownames(counts_mat)
+# Basic function to convert zebrafish to human gene names
+
+
+convertDanioGeneList_Mouse <- function(x){
+  require("biomaRt")
+  require("curl")
+  mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+  danio = useMart("ensembl", dataset = "drerio_gene_ensembl")
+  genesV2 = getLDS(attributes = c("ensembl_gene_id", "zfin_id_symbol"), filters = "ensembl_gene_id", 
+                                values = x , mart = danio, attributesL = c("mgi_symbol", "ensembl_gene_id", "description"), 
+                                martL = mouse, uniqueRows=T)
+  
+  colnames(genesV2)[colnames(genesV2)== "Gene.stable.ID"] <- "EnsmblID_Zebrafish"
+  colnames(genesV2)[colnames(genesV2)== "Gene.stable.ID.1"] <- "EnsmblID_Mouse"
+  
+  # Print the first 6 genes found to the screen
+  return(genesV2)
+}
+
+Mouse_Genes <- convertDanioGeneList_Mouse(zgGenes)
+head(Mouse_Genes)
+```
+
+# Histogram for counts ditribution
+
+```{r}
+hist((counts_mat))
+hist(log(counts_mat))
+```
+# boxplot to visualize the counts ditribution
+
+```{r}
+boxplot(counts_mat)
+boxplot(log(counts_mat))
+```
+# check if any valuse is NA
+```{r}
+sum(is.na(counts_mat))
+```
+#Function for PCA
+
+```{r}
+PCA <- function(mat,color_pca="",shape_pca= "", label_pca= "",save_plot= "no", name_of_plot= "PCA", comp1=1, comp2=2){
+  #Get the differential expressed values from the comparrison interested,
+  #extract the normalized values from the assay of vsd and plot them.
+  #Giving condition and group from your design table
+  
+  #1. Extract the counts.
+  dt <- mat
+  
+  #2. Perform pca
+  pca_dt <- prcomp(t(dt))
+  cat("PCA running...\n")
+  # Sys.sleep(0.2)
+  
+  #3. Extract percentVar data.
+  percentVar_dt <- pca_dt$sdev^2/sum(pca_dt$sdev^2)
+  cat("Percents calculated...\n")
+  # Sys.sleep(0.2)
+  
+  #4. Create the new dataframe to plot.
+  dt_f <- data.frame(PC1=pca_dt$x[,comp1],
+                     PC2=pca_dt$x[,comp2],
+                     color_pca=color_pca,
+                     shape_pca=shape_pca,
+                     label_pca= label_pca)
+  cat("Data frame built...\n")
+  # Sys.sleep(0.2)
+  
+  #5. Plot it 
+  cat("Plotting...\n")
+  # Sys.sleep(0.2)
+  print(save_plot)
+  require(ggplot2)
+  require(ggrepel)
+  if (save_plot== "no") {
+    pca_p <- ggplot(data = dt_f, aes_string(x = paste0("PC1"),
+                                          y = paste0("PC2"),
+                                          color = "color_pca", 
+                                          shape= "shape_pca", label="label_pca")) +
+            geom_point(size = 3) +
+            geom_text_repel(size= 3, max.overlaps = 50, 
+                            box.padding   = 1.5,point.padding = 0.5,force = 50)+
+            xlab(paste0("PC", comp1,": ", 
+                        round(percentVar_dt[comp1] * 100), "% variance")) +
+            ylab(paste0("PC",comp2,": ",
+                        round(percentVar_dt[comp2] * 100), "% variance")) +
+            # coord_fixed()+ 
+      NULL
+  }
+  if (save_plot== "yes"){
+  png(filename =paste0(name_of_plot,".png"),res = 300,width = 2560,height = 1440)
+  cat("Saving plot as: ",paste0(name_of_plot,"...\n"))
+  pca_p <- ggplot(data = dt_f, aes_string(x = paste0("PC",comp1),
+                                          y = paste0("PC",comp2),
+                                          color = "color_pca", 
+                                          shape= "shape_pca", label="label_pca")) +
+            geom_text_repel(size= 3, max.overlaps = 50, 
+                            box.padding   = 1.5,
+                            point.padding = 0.5,force = 50)+
+            geom_point(size = 3) +
+            xlab(paste0("PC", comp1,": ", round(percentVar_dt[comp1] * 100), "% variance")) +
+            ylab(paste0("PC",comp2,": ", round(percentVar_dt[comp2] * 100), "% variance")) +
+            # coord_fixed()+ 
+    NULL
+  print(pca_p)
+  dev.off()
+   }
+  # Sys.sleep(0.2)
+  cat("Done")
+  print(pca_p)
+
+  #return(pca_p)
+}
+```
+
+# Draw PCA and check the distribution(without normalization)
+
+```{r}
+PCA(mat = counts_mat, color_pca = metadata_smart$Tissue,
+    shape_pca =   metadata_smart$Tissue, label_pca = rownames(metadata_smart), save_plot = "no")
+```
+```{r}
+PCA(mat = log(counts_mat+1), color_pca = metadata_smart$Tissue,
+    shape_pca =   metadata_smart$Tissue, label_pca = rownames(metadata_smart), save_plot = "no")
+```
+# Make DESeq2 object
+```{r}
+dds <- DESeqDataSetFromMatrix(countData=counts_mat, 
+                              colData=metadata_smart, 
+                              design=~Tissue)
+```
+# Remove low expressing genes
+
+```{r}
+keep <- rowSums(counts(dds)) >= 10
+dds_filtered <- dds[keep,]
+dds
+dds_filtered
+```
+
+# rlog normalization and check with boxplot
+
+```{r}
+dds_filtered_rlog <- rlog(dds_filtered)
+boxplot(assay(dds_filtered_rlog))
+```
+# PCA After normalization
+
+```{r}
+PCA(mat = assay(dds_filtered_rlog), color_pca = metadata_smart$Tissue,
+    shape_pca =   metadata_smart$Tissue, label_pca = rownames(metadata_smart), save_plot = "no")
+```
+# PCA function with circles 
+
+
+```{r}
+library(ggbiplot)
+PCA_biplot <- function(mat,color_pca="",shape_pca= "", label_pca= "",
+                       save_plot= "no", name_of_plot= "PCA", comp1=1, comp2=2){
+  #Get the differential expressed values from the comparrison interested,
+  #extract the normalized values from the assay of vsd and plot them.
+  #Giving condition and group from your design table
+  
+  #1. Extract the counts.
+  dt <- mat
+  
+  #2. Perform pca
+  pca_dt <- prcomp(t(dt))
+  cat("PCA running...\n")
+
+
+  cat("Data frame built...\n")
+  # Sys.sleep(0.2)
+  
+  #5. Plot it 
+  cat("Plotting...\n")
+  # Sys.sleep(0.2)
+  print(save_plot)
+  require(ggplot2)
+  require(ggrepel)
+  require(ggbiplot)
+
+    pca_p <- ggbiplot(pcobj = pca_dt, ellipse = T, groups = color_pca, var.axes = F)
+
+  cat("Done")
+  print(pca_p)
+
+}
+```
+
+# PCA with cirlces after normalization
+
+```{r}
+PCA_biplot(mat = log(counts_mat+1), color_pca = metadata_smart$Tissue, 
+           shape_pca = metadata_smart$Tissue, label_pca = metadata_smart$Sample_Name, save_plot = "no")
+```
+```{r}
+design(dds_filtered)
+```
+# Run DEseq2
+
+```{r}
+dds_filtered <- DESeq(dds_filtered, parallel = T)
+```
+
+
+
+```{r}
+resultsNames(dds_filtered)
+```
+
+```{r}
+df <- plotCounts(dds_filtered, gene=c("ENSDARG00000031420"), intgroup = "Tissue",returnData = T)
+df$Tissue <- factor(df$Tissue, levels=c("Proepicardium","Pericardium","Heart_Tube"))
+
+ggplot(df, aes(x= Tissue, y= count, fill= Tissue, shape= Tissue))+ 
+  geom_dotplot(binaxis = "y", binwidth = 0.075, stackdir = "center", size= 1)+
+ 
+    scale_y_continuous(trans='log2')+ labs(title = "wt1a")+
+    NULL
+
+dev.copy(
+svg,
+file = paste0("wt1a_expression_outlier_removed.svg"),
+width = 10,
+height = 8
+)
+dev.off ()
+```
+```{r}
+
+df <- plotCounts(dds_filtered, gene=c("ENSDARG00000007990"), intgroup = "Tissue",returnData = T)
+df$Tissue <- factor(df$Tissue, levels=c("Proepicardium","Pericardium","Heart_Tube"))
+
+ggplot(df, aes(x= Tissue, y= count, fill= Tissue, shape= Tissue))+ 
+  geom_dotplot(binaxis = "y", binwidth = 0.075, stackdir = "center", size= 1)+
+ 
+    scale_y_continuous(trans='log2')+ labs(title = "wt1b")+
+  
+  NULL
+dev.copy(
+svg,
+file = paste0("wt1b_outlier_removed_outlier_removed.svg"),
+width = 10,
+height = 8
+)
+dev.off ()
+```
+
+```{r}
+# plotCounts(dds_filtered, gene="", intgroup = "Tissue", main = "")
+df <- plotCounts(dds_filtered, gene=c("ENSDARG00000036869"), 
+                 intgroup = "Tissue",returnData = T)
+df$Tissue <- factor(df$Tissue, levels=c("Proepicardium","Pericardium","Heart_Tube"))
+
+ggplot(df, aes(x= Tissue, y= count, fill= Tissue, shape= Tissue))+ 
+  geom_dotplot(binaxis = "y", binwidth = 0.05, stackdir = "center", size= 1)+
+  
+    scale_y_continuous(trans='log2')+ labs(title = "tcf21")+
+  
+  NULL
+dev.copy(
+svg,
+file = paste0("tcf21_outlier_removed_outlier_removed.svg"),
+width = 10,
+height = 8
+)
+dev.off ()
+```
+
+# Run DEGs for each comparison
+
+```{r}
+results_PC_HT <- lfcShrink(dds_filtered, contrast = c("Tissue","Pericardium","Heart_Tube"), 
+                           alpha=0.05, parallel=TRUE, type = "ashr")
+print("lfcshrinakge done...")
+results_PC_HT_df <- as.data.frame(results_PC_HT)
+head(results_PC_HT_df)
+results_PC_HT_df <- results_PC_HT_df %>% dplyr::arrange(padj)
+head(results_PC_HT_df)
+
+write.csv(results_PC_HT_df, "results_PC_vs_HT_outlier_removed.csv")
+
+```
+```{r}
+head(Mouse_Genes)
+```
+## Pericardium_vs_HeartTube
+
+```{r}
+results_PC_HT_df_annotated <- results_PC_HT_df
+results_PC_HT_df_annotated$ensmbl_id <- rownames(results_PC_HT_df_annotated)
+head(results_PC_HT_df_annotated)
+results_PC_HT_df_annotated <- merge(results_PC_HT_df_annotated, Mouse_Genes, 
+                                    by.x= "ensmbl_id", by.y= "EnsmblID_Zebrafish", all.x=T)
+head(results_PC_HT_df_annotated)
+write.csv(results_PC_HT_df_annotated, "results_PC_vs_HT_annotated_outlier_removed.csv")
+```
+```{r}
+head(results_PC_HT_df)
+```
+
+
+
+```{r}
+genes_of_interest <- c("wt1a", "wt1b", "tcf21")
+
+```
+
+### Volcano plot for Pericardium_vs_HeartTube
+```{r}
+require(ggplot2)
+require(ggrepel)
+require(clusterProfiler)
+require(tidyverse)
+
+draw_volcano<- function(fileinput, title, FCcutoff) {
+  # read input file
+  # drawing plots
+  ggplot(data =fileinput , aes(x = log2FoldChange, y = -log10(padj))) +
+    # draw lines
+   
+    
+    # draw points
+    geom_point(x = fileinput$log2FoldChange, y = -log10(fileinput$padj),alpha = 0.5, size = 1,color="lightskyblue1") +
+    # draw coloured points
+    geom_point(data = fileinput[which(fileinput$padj < 0.05 & fileinput$log2FoldChange < -FCcutoff),],
+               
+               aes(x=log2FoldChange, y = -log10(padj)), 
+               shape = 21, color = "orchid", fill = "orchid",
+               alpha = 0.3, size = 1) +
+    geom_point(data = fileinput[which(fileinput$padj < 0.05 & fileinput$log2FoldChange >= FCcutoff),],
+               
+               aes(x=log2FoldChange, y = -log10(padj)), 
+               shape = 21, color = "limegreen", fill = "limegreen",
+               alpha = 0.3, size = 1) +
+    # x axis scale
+    scale_x_continuous(breaks = seq(-round(max(abs(fileinput$log2FoldChange))),
+                                    round(max(abs(fileinput$log2FoldChange))),by = 1), 
+      limits = c(-round(max(abs(fileinput$log2FoldChange))),
+                 round(max(abs(fileinput$log2FoldChange))))) +
+    xlab("log2FoldChange") + 
+    scale_y_continuous( limits = c(0,round(max(-log10(abs(fileinput$padj+1)))))) + 
+    ylab("-Log10(pAdjusted)") + 
+    
+    # set title
+    ggtitle(title)+
+    # x and y axis limits
+    # black and white theme
+    theme_bw() +
+     geom_hline(size=1.2,yintercept = -log10(0.05), linetype = "dashed") +
+    # geom_hline(yintercept = -log10(0.05), linetype = "dotted", col = "darkgoldenrod") +
+    geom_vline(xintercept = FCcutoff, linetype = "dashed")+
+    geom_vline(xintercept = -FCcutoff, linetype = "dashed")+
+    # center title
+    theme(plot.title = element_text(hjust = 0.5), axis.text = element_text(size = 10), axis.title.x = element_text(size = 10),
+          axis.title.y = element_text(size = 10))
+}
+
+```
+
+
+```{r}
+
+
+b = draw_volcano(results_PC_HT_df_annotated,"Pericardium_vs_HeartTube", 0.58)
+ # print(b)
+#Set genes for marking 
+wt_set<-c("wt1a","wt1b", "tcf21", "myl7")
+wt_set
+wt_geneset<-as.data.frame(results_PC_HT_df_annotated[results_PC_HT_df_annotated$ZFIN.symbol%in%wt_set,])
+
+require(ggrepel)
+#Paint the genes in the plot
+c= b + geom_point(data=results_PC_HT_df_annotated[results_PC_HT_df_annotated$ZFIN.symbol%in%wt_set,],
+                  color="red",size=1, shape= 21) +
+  geom_text_repel(data = results_PC_HT_df_annotated[results_PC_HT_df_annotated$ZFIN.symbol%in%wt_set,],
+      aes(label=results_PC_HT_df_annotated[results_PC_HT_df_annotated$ZFIN.symbol%in%wt_set,]$ZFIN.symbol),
+  )+
+   scale_x_continuous(limits = c(-12,12))+scale_y_continuous(limits = c(0,70))+#nudge_x = 0,
+#nudge_y = 2,segment.size = 0.1)
+NULL
+  c
+
+dev.copy(
+svg,
+file = paste0("Volcano_Pericardium_vs_HeartTube_new_myl7_smalldots_outlier_removed.svg"),
+width = 10,
+height = 8
+)
+dev.off ()
+
+
+```
+
+
+## Proepicardium_vs_HeartTube
+
+```{r}
+results_PE_HT <- lfcShrink(dds_filtered, contrast = c("Tissue","Proepicardium","Heart_Tube"), 
+                           alpha=0.05, parallel=TRUE, type = "ashr")
+print("lfcshrinakge done...")
+results_PE_HT_df <- as.data.frame(results_PE_HT)
+results_PE_HT_df <- results_PE_HT_df %>% dplyr::arrange(padj)
+write.csv(results_PE_HT_df, "results_PE_vs_HT_outlier_removed.csv")
+
+```
+
+```{r}
+results_PE_HT_df_annotated <- results_PE_HT_df
+results_PE_HT_df_annotated$ensmbl_id <- rownames(results_PE_HT_df_annotated)
+head(results_PE_HT_df_annotated)
+results_PE_HT_df_annotated <- merge(results_PE_HT_df_annotated, Mouse_Genes, 
+                                    by.x= "ensmbl_id", by.y= "EnsmblID_Zebrafish", all.x=T)
+head(results_PE_HT_df_annotated)
+write.csv(results_PE_HT_df_annotated, "results_PE_vs_HT_annotated_outlier_removed.csv")
+```
+
+### Volcano plot for Proepicardium_vs_HeartTube
+
+```{r}
+b = draw_volcano(results_PE_HT_df_annotated,"Proepicardium_vs_HeartTube", 0.58)
+# print(b)
+#Set genes for marking 
+wt_set<-c("wt1a","wt1b", "tcf21", "myl7")
+wt_set
+wt_geneset<-as.data.frame(results_PE_HT_df_annotated[results_PE_HT_df_annotated$ZFIN.symbol%in%wt_set,])
+
+require(ggrepel)
+#Paint the genes in the plot
+c= b + geom_point(data=results_PE_HT_df_annotated[results_PE_HT_df_annotated$ZFIN.symbol%in%wt_set,],
+                  color="red",size=1, shape= 21) +
+  geom_text_repel(data = results_PE_HT_df_annotated[results_PE_HT_df_annotated$ZFIN.symbol%in%wt_set,],
+  aes(label=results_PE_HT_df_annotated[results_PE_HT_df_annotated$ZFIN.symbol%in%wt_set,]$ZFIN.symbol),
+  )+
+   scale_x_continuous(limits = c(-12,12)) +scale_y_continuous(limits = c(0,70))+
+#nudge_x = 0,
+#nudge_y = 2,segment.size = 0.1)
+  NULL
+c
+
+dev.copy(
+svg,
+file = paste0("Volcano_Proepicardium_vs_HeartTube_new_myl7_smalldots_outlier_removed.svg"),
+width = 10,
+height = 8
+)
+dev.off ()
+
+```
+## Proepicardium_vs_Pericardium
+```{r}
+results_PE_PC <- lfcShrink(dds_filtered, contrast = c("Tissue","Proepicardium","Pericardium"), 
+                           alpha=0.05, parallel=TRUE, type = "ashr")
+print("lfcshrinakge done...")
+results_PE_PC_df <- as.data.frame(results_PE_PC)
+results_PE_PC_df <- results_PE_PC_df %>% dplyr::arrange(padj)
+write.csv(results_PE_PC_df, "results_PE_vs_PC_outlier_removed.csv")
+
+```
+```{r}
+results_PE_PC_df_annotated <- results_PE_PC_df
+results_PE_PC_df_annotated$ensmbl_id <- rownames(results_PE_PC_df_annotated)
+head(results_PE_PC_df_annotated)
+results_PE_PC_df_annotated <- merge(results_PE_PC_df_annotated, Mouse_Genes, 
+                                    by.x= "ensmbl_id", by.y= "EnsmblID_Zebrafish", all.x=T)
+tail(results_PE_PC_df_annotated)
+
+write.csv(results_PE_PC_df_annotated, "results_PE_vs_PC_annotated_outlier_removed.csv")
+```
+
+### Volcano plot Proepicardium_vs_Pericardium
+
+```{r}
+
+results_PE_PC_df_annotated_1 <- results_PE_PC_df_annotated
+results_PE_PC_df_annotated_1$padj[results_PE_PC_df_annotated_1$ZFIN.symbol=="wt1a"] <- 1
+results_PE_PC_df_annotated_1$padj[results_PE_PC_df_annotated_1$ZFIN.symbol=="wt1b"] <- 1
+
+
+```
+
+
+```{r}
+results_PE_PC_df_annotated_volcano <- results_PE_PC_df_annotated
+
+b = draw_volcano(results_PE_PC_df_annotated_volcano,"Proepicardium_vs_Pericardium", 0.58)
+# print(b)
+#Set genes for marking 
+wt_set<-c("wt1a","wt1b", "tcf21", "myl7")
+wt_set
+
+results_PE_PC_df_annotated_volcano$padj[
+  results_PE_PC_df_annotated_volcano$ZFIN.symbol %in% wt_set & 
+    is.na(results_PE_PC_df_annotated_volcano$padj)] <- 1
+
+wt_geneset <- as.data.frame(results_PE_PC_df_annotated_volcano[
+  results_PE_PC_df_annotated_volcano$ZFIN.symbol %in%  wt_set,])
+
+require(ggrepel)
+#Paint the genes in the plot
+c= b + 
+  geom_point(data=results_PE_PC_df_annotated_volcano[results_PE_PC_df_annotated_volcano$ZFIN.symbol%in%
+                                                       wt_set,],
+             color="red",size=2, shape= 21) +
+  geom_text_repel(data = results_PE_PC_df_annotated_volcano[
+    results_PE_PC_df_annotated_volcano$ZFIN.symbol %in% wt_set,],
+aes(label=results_PE_PC_df_annotated_volcano[
+  results_PE_PC_df_annotated_volcano$ZFIN.symbol %in% wt_set,]$ZFIN.symbol))+
+  # ) +
+   scale_x_continuous(limits = c(-12,12))+scale_y_continuous(limits = c(0,5))
+  #nudge_x = 0,
+#nudge_y = 2,segment.size = 0.1)
+  NULL
+c
+
+dev.copy(
+svg,
+file = paste0("Volcano_Proepicardium_vs_Pericardium_new_myl7_smalldots_outlier_removed.svg"),
+width = 10,
+height = 8
+)
+dev.off ()
+```
+```{r}
+results_PE_PC_df_annotated_volcano <- results_PE_PC_df_annotated
+
+b = draw_volcano(results_PE_PC_df_annotated_volcano,"Proepicardium_vs_Pericardium", 0.58)
+# print(b)
+#Set genes for marking 
+wt_set<-c("wt1a","wt1b", "tcf21", "myl7")
+wt_set
+
+results_PE_PC_df_annotated_volcano$padj[
+  results_PE_PC_df_annotated_volcano$ZFIN.symbol %in% wt_set & 
+    is.na(results_PE_PC_df_annotated_volcano$padj)] <- 1
+wt_geneset<-as.data.frame(results_PE_PC_df_annotated_volcano[
+  results_PE_PC_df_annotated_volcano$ZFIN.symbol %in% wt_set,])
+
+require(ggrepel)
+#Paint the genes in the plot
+c= b + geom_point(data=results_PE_PC_df_annotated_volcano[
+  results_PE_PC_df_annotated_volcano$ZFIN.symbol %in% wt_set,],
+  color="red",size=2, shape= 21) +
+geom_text_repel(data = results_PE_PC_df_annotated_volcano[
+  results_PE_PC_df_annotated_volcano$ZFIN.symbol %in% wt_set,],
+aes(label=results_PE_PC_df_annotated_volcano[
+  results_PE_PC_df_annotated_volcano$ZFIN.symbol %in% wt_set,]$ZFIN.symbol))+
+  # ) +
+   scale_x_continuous(limits = c(-12,12))+scale_y_continuous(limits = c(0,70))
+  #nudge_x = 0,
+#nudge_y = 2,segment.size = 0.1)
+  NULL
+c
+
+dev.copy(
+svg,
+file = paste0("Volcano_Proepicardium_vs_Pericardium_new_same_yscale_myl7_smalldots_outlier_removed.svg"),
+width = 10,
+height = 8
+)
+dev.off ()
+```
+
+
+
+```{r}
+length(unique(rownames(counts_mat)))
+
+```
+# Write gct files
+
+Make dataframe with row annotation 
+
+```{r}
+
+rdesc_df <- data.frame(ensembl_gene_id = rownames(counts_mat))
+head(rdesc_df)
+dim(rdesc_df)
+rdesc_df <- dplyr::left_join(x = rdesc_df,y= gene_symbols_ensmbl_df, by= "ensembl_gene_id")
+head(rdesc_df)
+rdesc_df$zfin_id_symbol[rdesc_df$zfin_id_symbol==""] <- NA
+rdesc_df[duplicated(rdesc_df$ensembl_gene_id),]
+rdesc_df <- rdesc_df[!duplicated(rdesc_df$ensembl_gene_id),]
+rownames(rdesc_df) <- (rownames(counts_mat))
+head(rdesc_df)
+length(rownames(counts_mat))
+dim(gene_symbols_ensmbl_df)
+dim(rdesc_df)
+
+```
+
+## gct with raw counts
+
+```{r}
+gct_obj <- new("GCT", mat=counts_mat)
+gct_obj@cdesc <- metadata_smart
+gct_obj@rdesc <- rdesc_df
+write_gct(gct_obj, "smart_laura_counts_outlier_removed")
+gct_obj
+```
+```{r}
+write.csv(counts_mat, "raw_counts.csv")
+```
+
+
+## GCT with normalized data
+
+```{r}
+rdesc_df_norm <- rdesc_df[rownames(rdesc_df)%in% rownames(assay(dds_filtered_rlog)),]
+dim(rdesc_df_norm)
+```
+
+```{r}
+gct_obj_norm <- new("GCT", mat=assay(dds_filtered_rlog))
+gct_obj_norm@cdesc <- metadata_smart
+gct_obj_norm@rdesc <- rdesc_df_norm
+write_gct(gct_obj_norm, "smart_laura_counts_outlier_removed")
+gct_obj_norm
+```
+```{r}
+write.csv(assay(dds_filtered_rlog), "normalized_counts.csv")
+```
+
+# Save RData
+
+```{r}
+save.image("SMARTseq_analysis.Rdata")
+```
+
+```{r}
+sessionInfo()
+```
+
+
